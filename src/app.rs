@@ -1,12 +1,15 @@
-use std::{fs, io::Write, os::unix::process::ExitStatusExt, process};
-
 use anyhow::{Context, Result};
 use colored::Colorize;
 use keyring::Entry;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
+use similar::{ChangeTag, TextDiff};
+use std::{fs, io::Write, os::unix::process::ExitStatusExt, process};
 
-use crate::libopenjudge::{self, Language, Problem, Submission, SubmissionResult};
+use crate::{
+    display::*,
+    libopenjudge::{self, Language},
+};
 
 #[derive(Serialize, Deserialize, Default)]
 struct AppConfig {
@@ -45,74 +48,6 @@ impl AppConfig {
         fs::write(config_path, config)?;
         Ok(())
     }
-}
-
-fn print_problem(problem: &Problem) {
-    println!("{}/{}\n", problem.group, problem.probset.bold());
-    println!("{}\n", problem.title.on_yellow().bold());
-    println!("{}\n", problem.description);
-    if let Some(input) = &problem.input {
-        println!("{}", "Input".yellow().bold());
-        println!("{}\n", input);
-    }
-    if let Some(output) = &problem.output {
-        println!("{}", "Output".yellow().bold());
-        println!("{}\n", output);
-    }
-    if let Some(sample_input) = &problem.sample_input {
-        println!("{}", "Sample Input".yellow().bold());
-        println!("{}\n", sample_input);
-    }
-    if let Some(sample_output) = &problem.sample_output {
-        println!("{}", "Sample Output".yellow().bold());
-        println!("{}\n", sample_output);
-    }
-    if let Some(hint) = &problem.hint {
-        println!("{}", "Hint".yellow().bold());
-        println!("{}\n", hint);
-    }
-    if let Some(source) = &problem.source {
-        println!("{}", "Source".yellow().bold());
-        println!("{}\n", source);
-    }
-}
-
-fn print_submission(submission: &Submission) {
-    match &submission.result {
-        SubmissionResult::Accepted => {
-            println!("{}", "Accepted!".blue().bold());
-        }
-        SubmissionResult::CompileError { message } => {
-            println!("{}", "Compile Error.".green().bold());
-            println!("\n{}\n{}\n", "Compiler Diagnostics:".green(), message);
-        }
-        _ => {
-            println!(
-                "{}",
-                match submission.result {
-                    SubmissionResult::WrongAnswer => "Wrong Answer.",
-                    SubmissionResult::TimeLimitExceeded => "Time Limit Exceeded.",
-                    SubmissionResult::MemoryLimitExceeded => "Memory Limit Exceeded.",
-                    SubmissionResult::RuntimeError => "Runtime Error.",
-                    SubmissionResult::OutputLimitExceeded => "Output Limit Exceeded.",
-                    SubmissionResult::PresentationError => "Presentation Error.",
-                    _ => "Unknown error.",
-                }
-                .red()
-                .bold()
-            );
-        }
-    }
-    println!("#{}", submission.id.white().bold());
-    println!("Author:      {}", submission.author.white().bold());
-    println!("Lang:        {}", submission.lang.white().bold());
-    if let Some(time) = &submission.time {
-        println!("Time:        {}", time.white().bold());
-    }
-    if let Some(memory) = &submission.memory {
-        println!("Memory:      {}", memory.white().bold());
-    }
-    println!("Submit Time: {}", submission.submission_time.white().bold());
 }
 
 fn determine_language(file: &str, specified_lang: Option<String>) -> Result<Language> {
@@ -165,6 +100,29 @@ fn get_config_dir() -> std::path::PathBuf {
     config_root.join("config.json")
 }
 
+fn ensure_account(config: &Option<AppConfig>) -> Result<(&str, String)> {
+    let email = config
+        .as_ref()
+        .and_then(|config| config.user_email.as_deref())
+        .ok_or_else(|| anyhow::anyhow!(NO_CREDENTIALS_FOUND))?;
+    let entry = Entry::new("openjudge-cli", email)?;
+    let password = entry.get_password().expect(NO_CREDENTIALS_FOUND);
+    Ok((email, password))
+}
+
+fn ensure_last_problem<'a>(specified: &'a str, config: &'a Option<AppConfig>) -> Result<&'a str> {
+    if specified == "." {
+        return match config {
+            Some(config) => Ok(config
+                .last_problem
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!(NO_LAST_PROBLEM_FOUND))?),
+            None => Err(anyhow::anyhow!(NO_LAST_PROBLEM_FOUND)),
+        };
+    }
+    Ok(specified)
+}
+
 pub async fn process_credentials(email: String) -> Result<()> {
     let password = rpassword::prompt_password("Enter your password: ")?;
     println!("Validating credentials with OpenJudge...");
@@ -188,18 +146,17 @@ pub async fn process_credentials(email: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn view_problem(mut url: String) -> Result<()> {
-    let mut config = AppConfig::read_config(get_config_dir())?.unwrap_or_default();
-    if url == "." {
-        url = config
-            .last_problem
-            .expect("No last problem found. Please specify a problem URL.");
-    }
+pub async fn view_problem(url: &str) -> Result<()> {
+    let config = AppConfig::read_config(get_config_dir())?;
+    let url = ensure_last_problem(url, &config)?;
     let client = libopenjudge::create_client().await?;
     let problem = libopenjudge::get_problem(&client, &url).await?;
-    print_problem(&problem);
-    config.last_problem = Some(url);
-    config.write_config(get_config_dir())?;
+    print!("{}", &problem);
+    AppConfig {
+        last_problem: Some(url.to_string()),
+        ..config.unwrap_or_default()
+    }
+    .write_config(get_config_dir())?;
     Ok(())
 }
 
@@ -220,31 +177,21 @@ async fn submit_solution_internal(
         submission_url.blue().underline()
     );
     let submission = libopenjudge::query_submission_result(&client, &submission_url).await?;
-    print_submission(&submission);
+    print!("{}", &submission);
     Ok(())
 }
 
 pub async fn submit_solution(url: &str, file: &str, lang: Option<String>) -> Result<()> {
     let lang = determine_language(file, lang)?;
-    let mut config = AppConfig::read_config(get_config_dir())?
-        .expect("No user credentials found. Please run `openjudge-cli credentials` first.");
-    let email = config
-        .user_email
-        .as_ref()
-        .expect("No user credentials found. Please run `openjudge-cli credentials` first.");
-    let entry = Entry::new("openjudge-cli", email)?;
-    let password = entry
-        .get_password()
-        .expect("No user credentials found. Please run `openjudge-cli credentials` first.");
-    let mut url = url.to_string();
-    if url == "." {
-        url = config
-            .last_problem
-            .expect("No last problem found. Please specify a problem URL.");
-    }
+    let config = AppConfig::read_config(get_config_dir())?;
+    let (email, password) = ensure_account(&config)?;
+    let url = ensure_last_problem(url, &config)?;
     submit_solution_internal(&url, file, lang, email, &password).await?;
-    config.last_problem = Some(url);
-    config.write_config(get_config_dir())?;
+    AppConfig {
+        last_problem: Some(url.to_string()),
+        ..config.unwrap_or_default()
+    }
+    .write_config(get_config_dir())?;
     Ok(())
 }
 
@@ -254,13 +201,8 @@ pub async fn test_solution(
     lang: Option<String>,
     submit: bool,
 ) -> Result<()> {
-    let mut config = AppConfig::read_config(get_config_dir())?.unwrap_or_default();
-    let mut url = url.to_string();
-    if url == "." {
-        url = config
-            .last_problem
-            .expect("No last problem found. Please specify a problem URL.");
-    }
+    let config = AppConfig::read_config(get_config_dir())?;
+    let url = ensure_last_problem(url, &config)?;
     let lang = determine_language(file, lang)?;
     let client = libopenjudge::create_client().await?;
     let problem = libopenjudge::get_problem(&client, &url).await?;
@@ -280,10 +222,10 @@ pub async fn test_solution(
     println!("{}", input);
     let output = problem.sample_output.unwrap_or_default();
     let code_output = match lang {
-        Language::Gcc => {
+        Language::Gcc | Language::Gpp => {
             // .exe used for Windows compatibility
             let excutable_path = format!("./sol-{}.exe", nanoid!());
-            process::Command::new("gcc")
+            process::Command::new(if lang == Language::Gcc { "gcc" } else { "g++" })
                 .arg("-o")
                 .arg(&excutable_path)
                 .arg(file)
@@ -303,49 +245,18 @@ pub async fn test_solution(
             let _ = fs::remove_file(&excutable_path);
             output
         }
-        Language::Gpp => {
-            let excutable_path = format!("./sol-{}.exe", nanoid!());
-            process::Command::new("g++")
-                .arg("-o")
-                .arg(&excutable_path)
-                .arg(file)
-                .spawn()?
-                .wait()?;
-            let mut child_process = process::Command::new(&excutable_path)
-                .stdin(process::Stdio::piped())
-                .stdout(process::Stdio::piped())
-                .stderr(process::Stdio::piped())
-                .spawn()?;
-            child_process
-                .stdin
-                .take()
-                .expect("Handle to stdin not available.")
-                .write_all(input.as_bytes())?;
-            let output = child_process.wait_with_output()?;
-            let _ = fs::remove_file(&excutable_path);
-            output
-        }
-        Language::PyPy3 => {
-            let mut child_process = process::Command::new("pypy3")
-                .arg(file)
-                .stdin(process::Stdio::piped())
-                .stdout(process::Stdio::piped())
-                .stderr(process::Stdio::piped())
-                .spawn()?;
-            child_process
-                .stdin
-                .take()
-                .expect("Handle to stdin not available.")
-                .write_all(input.as_bytes())?;
-            child_process.wait_with_output()?
-        }
-        Language::Python3 => {
-            let mut child_process = process::Command::new("python3")
-                .arg(file)
-                .stdin(process::Stdio::piped())
-                .stdout(process::Stdio::piped())
-                .stderr(process::Stdio::piped())
-                .spawn()?;
+        Language::PyPy3 | Language::Python3 => {
+            let mut child_process = process::Command::new(if lang == Language::PyPy3 {
+                "pypy3"
+            } else {
+                "python3"
+            })
+            .arg(file)
+            .env("PYTHON_COLORS", "1")
+            .stdin(process::Stdio::piped())
+            .stdout(process::Stdio::piped())
+            .stderr(process::Stdio::piped())
+            .spawn()?;
             child_process
                 .stdin
                 .take()
@@ -359,24 +270,55 @@ pub async fn test_solution(
         if code_output.trim() == output.trim() {
             println!("{}", "Accepted!".blue().bold());
             if submit {
-                submit_solution_internal(
-                    &url,
-                    file,
-                    lang,
-                    config.user_email.as_ref().expect(
-                        "No user credentials found. Please run `openjudge-cli credentials` first.",
-                    ),
-                    &Entry::new("openjudge-cli", config.user_email.as_ref().unwrap())?
-                        .get_password()?,
-                )
-                .await?;
+                let (email, password) = ensure_account(&config)?;
+                submit_solution_internal(&url, file, lang, email, &password).await?;
             }
         } else {
+            let diff = TextDiff::from_lines(output.trim(), code_output.trim());
             println!("{}", "Wrong Answer.".red().bold());
             println!("{}", "Expected Output:".yellow().bold());
-            println!("{}", output);
+            println!("{}", output.trim());
             println!("{}", "Your Output:".yellow().bold());
-            println!("{}", code_output);
+            println!("{}", code_output.trim());
+            println!("{}", "Diff:".yellow().bold());
+            for change in diff.iter_all_changes() {
+                let old_index = change
+                    .old_index()
+                    .map(|v| (v + 1).to_string())
+                    .unwrap_or(" ".to_string());
+                let new_index = change
+                    .new_index()
+                    .map(|v| (v + 1).to_string())
+                    .unwrap_or(" ".to_string());
+                match change.tag() {
+                    ChangeTag::Delete => {
+                        println!(
+                            "{:>3} {:>3} | {} {}",
+                            old_index,
+                            new_index,
+                            "-".red(),
+                            change.value().trim().red()
+                        );
+                    }
+                    ChangeTag::Insert => {
+                        println!(
+                            "{:>3} {:>3} | {} {}",
+                            old_index,
+                            new_index,
+                            "+".green(),
+                            change.value().trim().green()
+                        );
+                    }
+                    ChangeTag::Equal => {
+                        println!(
+                            "{:>3} {:>3} |   {}",
+                            old_index,
+                            new_index,
+                            change.value().trim()
+                        );
+                    }
+                }
+            }
         }
     } else {
         println!("{}", "Runtime Error.".red().bold());
@@ -391,23 +333,94 @@ pub async fn test_solution(
         println!("STDOUT:\n{}", String::from_utf8(code_output.stdout)?);
         println!("STDERR:\n{}", String::from_utf8(code_output.stderr)?);
     }
-    config.last_problem = Some(url);
-    config.write_config(get_config_dir())?;
+    AppConfig {
+        last_problem: Some(url.to_string()),
+        ..config.unwrap_or_default()
+    }
+    .write_config(get_config_dir())?;
     Ok(())
 }
 
 pub async fn search(group: &str, query: &str) -> Result<()> {
-    println!("Searching for {} in group {}...", query.bold(), group.bold());
+    println!(
+        "Searching for {} in group {}...",
+        query.bold(),
+        group.bold()
+    );
     let client = libopenjudge::create_client().await?;
-    let result = libopenjudge::search(&client, &group, &query).await?;
+    let result = libopenjudge::search(&client, group, query).await?;
     println!();
     println!("Found {} results:", result.len().to_string().bold());
     for item in &result {
-        println!("#{} {} {}/{}", item.id, item.title.yellow().bold(), item.group, item.probset.bold());
-        println!("{}", item.url.blue().underline().bold());
-        println!("AC/Submissions: {}/{}", item.accepted_cnt.to_string().blue(), item.submission_cnt);
-        println!();
+        println!("{}", item)
     }
 
+    Ok(())
+}
+
+pub async fn view_user() -> Result<()> {
+    let config = AppConfig::read_config(get_config_dir())?;
+    let (email, password) = ensure_account(&config)?;
+    let client = libopenjudge::create_client().await?;
+    libopenjudge::login(&client, email, &password).await?;
+    let user = libopenjudge::get_user_info(&client).await?;
+    print!("{}", user);
+    Ok(())
+}
+
+pub async fn view_submission(url: &str) -> Result<()> {
+    let config = AppConfig::read_config(get_config_dir())?;
+    let (email, password) = ensure_account(&config)?;
+    let client = libopenjudge::create_client().await?;
+    libopenjudge::login(&client, email, &password).await?;
+    let submission = libopenjudge::query_submission_result(&client, url).await?;
+    println!("{}", submission);
+    println!("{}\n{}", "Code".bold().on_white(), submission.code);
+    Ok(())
+}
+
+pub async fn list_submissions(problem_url: &str) -> Result<()> {
+    let config = AppConfig::read_config(get_config_dir())?;
+    let problem_url = ensure_last_problem(problem_url, &config)?;
+    let (email, password) = ensure_account(&config)?;
+    let client = libopenjudge::create_client().await?;
+    libopenjudge::login(&client, email, &password).await?;
+    let submissions = libopenjudge::list_submissions(&client, problem_url).await?;
+
+    if submissions.is_empty() {
+        println!("{}", "No submissions found.".bold());
+    } else {
+        println!(
+            "Found {} submissions:",
+            submissions.len().to_string().bold()
+        );
+        for submission in &submissions {
+            println!("{}", submission);
+        }
+    }
+    Ok(())
+}
+
+pub async fn list_probsets(group: &str) -> Result<()> {
+    let client = libopenjudge::create_client().await?;
+    let group = libopenjudge::get_group_info(&client, group).await?;
+    println!("{}", group);
+    Ok(())
+}
+
+pub async fn list_problems(
+    group: &str,
+    probset: &str,
+    page: Option<u32>,
+    show_status: bool,
+) -> Result<()> {
+    let client = libopenjudge::create_client().await?;
+    if show_status {
+        let config = AppConfig::read_config(get_config_dir())?;
+        let (email, password) = ensure_account(&config)?;
+        libopenjudge::login(&client, email, &password).await?;
+    }
+    let problems = libopenjudge::get_partial_probset_info(&client, group, probset, page).await?;
+    println!("{}", problems);
     Ok(())
 }

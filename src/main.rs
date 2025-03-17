@@ -1,7 +1,8 @@
 mod app;
+mod display;
 mod libopenjudge;
 
-use app::{process_credentials, search, submit_solution, test_solution, view_problem};
+use app::*;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, arg, command};
@@ -26,12 +27,14 @@ enum AppCommand {
         email: String,
     },
 
+    #[command(visible_alias = "v")]
     /// View problems, groups, status.
     View {
         #[command(subcommand)]
         view_type: ViewType,
     },
 
+    #[command(visible_alias = "s")]
     /// Submit a solution to a problem.
     Submit {
         /// URL of the problem, excluding '/submit'.
@@ -51,6 +54,7 @@ enum AppCommand {
         lang: Option<String>,
     },
 
+    #[command(visible_alias = "t")]
     /// Test a solution against sample input/output.
     /// Be aware: testing solution locally requires compiler/interpreter be accessible via command line.
     /// For C, gcc is called;
@@ -78,24 +82,71 @@ enum AppCommand {
         submit: bool,
     },
 
+    #[command(visible_alias = "S")]
+    /// Use keyword to search within a group.
     Search {
         /// Group name, used to construct query url like http://{group}.openjudge.cn/search/?q=...
         #[arg()]
-        group: String, 
+        group: String,
         /// Search query.
         #[arg()]
         query: String,
-    }
+    },
+
+    #[command(visible_alias = "l")]
+    /// List submissions, problem sets, problems.
+    List {
+        #[command(subcommand)]
+        list_type: ListType,
+    },
 }
 
 #[derive(Subcommand)]
 enum ViewType {
     User,
+
+    #[command(alias = "p")]
     Problem {
         /// URL of the problem.
         /// Use "." to view the last operated problem.
         #[arg()]
         url: String,
+    },
+    Submission {
+        #[arg()]
+        url: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ListType {
+    /// List all submissions commited by user of a problem.
+    #[command(visible_alias = "s")]
+    Submissions {
+        #[arg()]
+        problem_url: String,
+    },
+
+    /// List all problem sets under a certain group.
+    /// Requests are constructed as http://{group}.openjudge.cn/
+    #[command(visible_alias = "P")]
+    Probsets {
+        #[arg()]
+        group: String,
+    },
+
+    /// List all problems under a problem set.
+    /// Requests are constructed as http://{group}.openjudge.cn/{probset}/
+    #[command(visible_alias = "p")]
+    Problems {
+        #[arg()]
+        group: String,
+        #[arg()]
+        probset: String,
+        #[arg()]
+        page: Option<u32>,
+        #[arg(short = 's', long = "status")]
+        show_status: bool,
     },
 }
 
@@ -109,10 +160,13 @@ async fn main() -> Result<()> {
         }
         AppCommand::View { view_type } => match view_type {
             ViewType::User => {
-                todo!("View user status.");
+                view_user().await?;
             }
             ViewType::Problem { url } => {
-                view_problem(url).await?;
+                view_problem(&url).await?;
+            }
+            ViewType::Submission { url } => {
+                view_submission(&url).await?;
             }
         },
         AppCommand::Submit { url, file, lang } => {
@@ -129,6 +183,22 @@ async fn main() -> Result<()> {
         AppCommand::Search { group, query } => {
             search(&group, &query).await?;
         }
+        AppCommand::List { list_type } => match list_type {
+            ListType::Submissions { problem_url } => {
+                list_submissions(&problem_url).await?;
+            }
+            ListType::Probsets { group } => {
+                list_probsets(&group).await?;
+            }
+            ListType::Problems {
+                group,
+                probset,
+                page,
+                show_status,
+            } => {
+                list_problems(&group, &probset, page, show_status).await?;
+            }
+        },
     }
 
     Ok(())

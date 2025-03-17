@@ -18,3 +18,8 @@ url = "2.5.4"
 rpassword = "7.3.1"
 nanoid = "0.4.0"
 dirs = "6.0.0"
+similar = "2.7.0"
+
+[[bin]]
+name = "oj"
+path = "src/main.rs"
