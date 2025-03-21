@@ -591,11 +591,10 @@ pub async fn get_partial_probset_info(
             .ok_or(anyhow!("Cannot select submission population element."))?
             .inner_html()
             .parse()?;
-        let solved = entry.select(&PROBSET_ROW_SOLVED_TD_SELECTOR).next().map(|td| {
-            td.select(&PROBSET_ROW_SOLVED_IMG_SELECTOR)
-                .next()
-                .is_some()
-        });
+        let solved = entry
+            .select(&PROBSET_ROW_SOLVED_TD_SELECTOR)
+            .next()
+            .map(|td| td.select(&PROBSET_ROW_SOLVED_IMG_SELECTOR).next().is_some());
         problems.push(ProblemListEntry {
             problem_number,
             title,

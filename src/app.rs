@@ -5,11 +5,16 @@ use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
 use std::{fs, io::Write, os::unix::process::ExitStatusExt, process};
+use syntect::{
+    easy::HighlightLines, highlighting::Style, parsing::SyntaxSet, util::as_24_bit_terminal_escaped,
+};
 
 use crate::{
     display::*,
     libopenjudge::{self, Language},
 };
+
+use crate::code_theme;
 
 #[derive(Serialize, Deserialize, Default)]
 struct AppConfig {
@@ -150,7 +155,7 @@ pub async fn view_problem(url: &str) -> Result<()> {
     let config = AppConfig::read_config(get_config_dir())?;
     let url = ensure_last_problem(url, &config)?;
     let client = libopenjudge::create_client().await?;
-    let problem = libopenjudge::get_problem(&client, &url).await?;
+    let problem = libopenjudge::get_problem(&client, url).await?;
     print!("{}", &problem);
     AppConfig {
         last_problem: Some(url.to_string()),
@@ -186,7 +191,7 @@ pub async fn submit_solution(url: &str, file: &str, lang: Option<String>) -> Res
     let config = AppConfig::read_config(get_config_dir())?;
     let (email, password) = ensure_account(&config)?;
     let url = ensure_last_problem(url, &config)?;
-    submit_solution_internal(&url, file, lang, email, &password).await?;
+    submit_solution_internal(url, file, lang, email, &password).await?;
     AppConfig {
         last_problem: Some(url.to_string()),
         ..config.unwrap_or_default()
@@ -205,7 +210,7 @@ pub async fn test_solution(
     let url = ensure_last_problem(url, &config)?;
     let lang = determine_language(file, lang)?;
     let client = libopenjudge::create_client().await?;
-    let problem = libopenjudge::get_problem(&client, &url).await?;
+    let problem = libopenjudge::get_problem(&client, url).await?;
     if problem.sample_input.is_none() || problem.sample_output.is_none() {
         return Err(anyhow::anyhow!("No sample input/output found for problem."));
     }
@@ -271,7 +276,7 @@ pub async fn test_solution(
             println!("{}", "Accepted!".blue().bold());
             if submit {
                 let (email, password) = ensure_account(&config)?;
-                submit_solution_internal(&url, file, lang, email, &password).await?;
+                submit_solution_internal(url, file, lang, email, &password).await?;
             }
         } else {
             let diff = TextDiff::from_lines(output.trim(), code_output.trim());
@@ -375,7 +380,23 @@ pub async fn view_submission(url: &str) -> Result<()> {
     libopenjudge::login(&client, email, &password).await?;
     let submission = libopenjudge::query_submission_result(&client, url).await?;
     println!("{}", submission);
-    println!("{}\n{}", "Code".bold().on_white(), submission.code);
+    println!("{}", "Code".bold().on_white());
+    let syntax_set = SyntaxSet::load_defaults_nonewlines();
+    let syntax = syntax_set
+        .find_syntax_by_extension(match submission.lang.as_str() {
+            "Python3" => "py",
+            "PyPy3" => "py",
+            "G++" => "cpp",
+            "GCC" => "c",
+            _ => "text",
+        })
+        .unwrap();
+    let mut highlighter = HighlightLines::new(syntax, &code_theme::ENKI_TOKYO_NIGHT_THEME);
+    for line in submission.code.lines() {
+        let ranges: Vec<(Style, &str)> = highlighter.highlight_line(line, &syntax_set)?;
+        let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
+        println!("{}", escaped);
+    }
     Ok(())
 }
 

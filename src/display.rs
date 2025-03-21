@@ -183,12 +183,8 @@ impl Display for ProblemListEntry {
             f,
             "{} {} {}",
             match self.solved {
-                Some(true) => ("#".to_owned() + &self.problem_number)
-                    .blue()
-                    .bold(),
-                Some(false) => ("#".to_owned() + &self.problem_number)
-                    .yellow()
-                    .bold(),
+                Some(true) => ("#".to_owned() + &self.problem_number).blue().bold(),
+                Some(false) => ("#".to_owned() + &self.problem_number).yellow().bold(),
                 None => ("#".to_owned() + &self.problem_number).bold(),
             },
             self.title.yellow().bold(),

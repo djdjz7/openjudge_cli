@@ -1,4 +1,5 @@
 mod app;
+mod code_theme;
 mod display;
 mod libopenjudge;
 
@@ -103,6 +104,7 @@ enum AppCommand {
 
 #[derive(Subcommand)]
 enum ViewType {
+    #[command(alias = "u")]
     User,
 
     #[command(alias = "p")]
@@ -112,6 +114,7 @@ enum ViewType {
         #[arg()]
         url: String,
     },
+    #[command(alias = "s")]
     Submission {
         #[arg()]
         url: String,
