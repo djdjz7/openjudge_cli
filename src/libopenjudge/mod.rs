@@ -1,6 +1,8 @@
+mod html;
 mod selectors;
 use anyhow::{Result, anyhow};
 use base64::prelude::*;
+use html::html_to_terminal_output;
 use reqwest::Client;
 use scraper::{self, ElementRef};
 use selectors::*;
@@ -157,7 +159,7 @@ async fn get_and_parse_html(http_client: &Client, url: &str) -> Result<scraper::
     Ok(scraper::html::Html::parse_document(&html))
 }
 
-pub async fn get_problem(http_client: &Client, url: &str) -> Result<Problem> {
+pub async fn get_problem(http_client: &Client, url: &str, enable_sixel: bool) -> Result<Problem> {
     let dom = get_and_parse_html(http_client, url).await?;
     let group = query_selector_inner_text(&dom, &PAGE_HEADER_GROUP_SELECTOR);
     let probset = query_selector_inner_text(&dom, &PAGE_HEADER_PROBSET_SELECTOR);
@@ -178,13 +180,8 @@ pub async fn get_problem(http_client: &Client, url: &str) -> Result<Problem> {
             .next_siblings()
             .find(|element| element.value().is_element());
         if let Some(dd) = dd {
-            let dd_text = ElementRef::wrap(dd)
-                .unwrap()
-                .text()
-                .collect::<Vec<&str>>()
-                .join("\n")
-                .trim()
-                .to_string();
+            let dd_text =
+                html_to_terminal_output(&ElementRef::wrap(dd).unwrap(), enable_sixel).await;
             match dt_text.as_str() {
                 "描述" => description = dd_text,
                 "输入" => input = Some(dd_text),

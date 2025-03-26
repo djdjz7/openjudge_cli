@@ -100,6 +100,12 @@ enum AppCommand {
         #[command(subcommand)]
         list_type: ListType,
     },
+
+    #[command()]
+    Config {
+        #[arg(long)]
+        sixel: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -202,6 +208,9 @@ async fn main() -> Result<()> {
                 list_problems(&group, &probset, page, show_status).await?;
             }
         },
+        AppCommand::Config { sixel } => {
+            configure(sixel)?;
+        }
     }
 
     Ok(())

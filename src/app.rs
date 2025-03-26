@@ -20,6 +20,7 @@ use crate::code_theme;
 struct AppConfig {
     user_email: Option<String>,
     last_problem: Option<String>,
+    enable_sixel: Option<bool>,
 }
 
 impl AppConfig {
@@ -155,7 +156,15 @@ pub async fn view_problem(url: &str) -> Result<()> {
     let config = AppConfig::read_config(get_config_dir())?;
     let url = ensure_last_problem(url, &config)?;
     let client = libopenjudge::create_client().await?;
-    let problem = libopenjudge::get_problem(&client, url).await?;
+    let problem = libopenjudge::get_problem(
+        &client,
+        url,
+        config
+            .as_ref()
+            .map(|c| c.enable_sixel.unwrap_or(false))
+            .unwrap_or(false),
+    )
+    .await?;
     print!("{}", &problem);
     AppConfig {
         last_problem: Some(url.to_string()),
@@ -210,7 +219,7 @@ pub async fn test_solution(
     let url = ensure_last_problem(url, &config)?;
     let lang = determine_language(file, lang)?;
     let client = libopenjudge::create_client().await?;
-    let problem = libopenjudge::get_problem(&client, url).await?;
+    let problem = libopenjudge::get_problem(&client, url, false).await?;
     if problem.sample_input.is_none() || problem.sample_output.is_none() {
         return Err(anyhow::anyhow!("No sample input/output found for problem."));
     }
@@ -443,5 +452,15 @@ pub async fn list_problems(
     }
     let problems = libopenjudge::get_partial_probset_info(&client, group, probset, page).await?;
     println!("{}", problems);
+    Ok(())
+}
+
+pub fn configure(sixel: bool) -> Result<()> {
+    let conf = AppConfig::read_config(get_config_dir())?;
+    AppConfig {
+        enable_sixel: Some(sixel),
+        ..conf.unwrap_or_default()
+    }
+    .write_config(get_config_dir())?;
     Ok(())
 }
