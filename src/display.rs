@@ -24,7 +24,7 @@ impl Display for User {
 impl Display for Problem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}/{}\n", self.group, self.probset.bold())?;
-        writeln!(f, "{}\n", self.title.on_yellow().bold())?;
+        writeln!(f, "{}\n", self.title.black().on_yellow().bold())?;
         writeln!(f, "{}\n", self.description)?;
         if let Some(ref input) = self.input {
             writeln!(f, "{}", "Input".yellow().bold())?;
