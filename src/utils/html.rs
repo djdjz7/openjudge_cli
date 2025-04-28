@@ -4,6 +4,14 @@ use markup5ever::local_name;
 use scraper::ElementRef;
 use sixel_bytes;
 
+pub async fn get_printable_html_text(text: &str, enable_sixel: bool) -> String {
+    html_to_terminal_output(
+        &scraper::Html::parse_fragment(text).root_element(),
+        enable_sixel,
+    )
+    .await
+}
+
 pub async fn html_to_terminal_output(element: &ElementRef<'_>, enable_sixel: bool) -> String {
     if let local_name!("pre") = element.value().name.local {
         return element.text().collect();
@@ -20,7 +28,7 @@ pub async fn html_to_terminal_output(element: &ElementRef<'_>, enable_sixel: boo
                     .as_text()
                     .expect("Reported text node cannot be converted into Text.")
                     .trim()
-                    .to_string()
+                    .to_string(),
             );
         } else if child.value().is_element() {
             let ele_ref = ElementRef::wrap(child)

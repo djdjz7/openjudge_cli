@@ -2,6 +2,7 @@ mod app;
 mod code_theme;
 mod display;
 mod libopenjudge;
+mod utils;
 
 use app::*;
 

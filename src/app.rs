@@ -10,17 +10,24 @@ use syntect::{
 };
 
 use crate::{
+    code_theme,
     display::*,
-    libopenjudge::{self, Language},
+    libopenjudge::{self, Language, Problem},
+    utils::html::get_printable_html_text,
 };
-
-use crate::code_theme;
 
 #[derive(Serialize, Deserialize, Default)]
 struct AppConfig {
     user_email: Option<String>,
     last_problem: Option<String>,
+    graphics_protocal: Option<GraphcisProtocal>,
     enable_sixel: Option<bool>,
+
+#[derive(Serialize, Deserialize)]
+enum GraphcisProtocal {
+    Disabled,
+    Sixel,
+    Kitty,
 }
 
 impl AppConfig {
@@ -156,16 +163,31 @@ pub async fn view_problem(url: &str) -> Result<()> {
     let config = AppConfig::read_config(get_config_dir())?;
     let url = ensure_last_problem(url, &config)?;
     let client = libopenjudge::create_client().await?;
-    let problem = libopenjudge::get_problem(
-        &client,
-        url,
-        config
-            .as_ref()
-            .map(|c| c.enable_sixel.unwrap_or(false))
-            .unwrap_or(false),
-    )
-    .await?;
-    print!("{}", &problem);
+    let problem = libopenjudge::get_problem(&client, url).await?;
+    let enable_sixel = config
+        .as_ref()
+        .map(|x| x.graphics_protocal.unwrap_or(false))
+        .unwrap_or(false);
+    macro_rules! map_optional_printable {
+        ($field: expr) => {
+            if let Some(s) = $field {
+                Some(get_printable_html_text(s, enable_sixel).await)
+            } else {
+                None
+            }
+        };
+    }
+    let problem_print = Problem {
+        description: get_printable_html_text(&problem.description, enable_sixel).await,
+        input: map_optional_printable!(&problem.input),
+        output: map_optional_printable!(&problem.output),
+        sample_input: map_optional_printable!(&problem.sample_input),
+        sample_output: map_optional_printable!(&problem.sample_output),
+        hint: map_optional_printable!(&problem.hint),
+        source: map_optional_printable!(&problem.source),
+        ..problem
+    };
+    print!("{}", &problem_print);
     AppConfig {
         last_problem: Some(url.to_string()),
         ..config.unwrap_or_default()
@@ -219,7 +241,7 @@ pub async fn test_solution(
     let url = ensure_last_problem(url, &config)?;
     let lang = determine_language(file, lang)?;
     let client = libopenjudge::create_client().await?;
-    let problem = libopenjudge::get_problem(&client, url, false).await?;
+    let problem = libopenjudge::get_problem(&client, url).await?;
     if problem.sample_input.is_none() || problem.sample_output.is_none() {
         return Err(anyhow::anyhow!("No sample input/output found for problem."));
     }
@@ -240,6 +262,7 @@ pub async fn test_solution(
             // .exe used for Windows compatibility
             let excutable_path = format!("./sol-{}.exe", nanoid!());
             process::Command::new(if lang == Language::Gcc { "gcc" } else { "g++" })
+                .arg("--std=gnu++14")
                 .arg("-o")
                 .arg(&excutable_path)
                 .arg(file)
@@ -458,7 +481,7 @@ pub async fn list_problems(
 pub fn configure(sixel: bool) -> Result<()> {
     let conf = AppConfig::read_config(get_config_dir())?;
     AppConfig {
-        enable_sixel: Some(sixel),
+        graphics_protocal: Some(sixel),
         ..conf.unwrap_or_default()
     }
     .write_config(get_config_dir())?;
