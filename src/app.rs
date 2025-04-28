@@ -13,21 +13,14 @@ use crate::{
     code_theme,
     display::*,
     libopenjudge::{self, Language, Problem},
-    utils::html::get_printable_html_text,
+    utils::html::{GraphicsProtocol, get_printable_html_text},
 };
 
 #[derive(Serialize, Deserialize, Default)]
 struct AppConfig {
     user_email: Option<String>,
     last_problem: Option<String>,
-    graphics_protocal: Option<GraphcisProtocal>,
-    enable_sixel: Option<bool>,
-
-#[derive(Serialize, Deserialize)]
-enum GraphcisProtocal {
-    Disabled,
-    Sixel,
-    Kitty,
+    graphics_protocol: Option<GraphicsProtocol>,
 }
 
 impl AppConfig {
@@ -164,21 +157,25 @@ pub async fn view_problem(url: &str) -> Result<()> {
     let url = ensure_last_problem(url, &config)?;
     let client = libopenjudge::create_client().await?;
     let problem = libopenjudge::get_problem(&client, url).await?;
-    let enable_sixel = config
+    let graphics_protocol = config
         .as_ref()
-        .map(|x| x.graphics_protocal.unwrap_or(false))
-        .unwrap_or(false);
+        .map(|x| {
+            x.graphics_protocol
+                .clone()
+                .unwrap_or(GraphicsProtocol::Disabled)
+        })
+        .unwrap_or(GraphicsProtocol::Disabled);
     macro_rules! map_optional_printable {
         ($field: expr) => {
             if let Some(s) = $field {
-                Some(get_printable_html_text(s, enable_sixel).await)
+                Some(get_printable_html_text(s, &graphics_protocol).await)
             } else {
                 None
             }
         };
     }
     let problem_print = Problem {
-        description: get_printable_html_text(&problem.description, enable_sixel).await,
+        description: get_printable_html_text(&problem.description, &graphics_protocol).await,
         input: map_optional_printable!(&problem.input),
         output: map_optional_printable!(&problem.output),
         sample_input: map_optional_printable!(&problem.sample_input),
@@ -478,10 +475,10 @@ pub async fn list_problems(
     Ok(())
 }
 
-pub fn configure(sixel: bool) -> Result<()> {
+pub fn configure(graphics: &str) -> Result<()> {
     let conf = AppConfig::read_config(get_config_dir())?;
     AppConfig {
-        graphics_protocal: Some(sixel),
+        graphics_protocol: Some(graphics.parse()?),
         ..conf.unwrap_or_default()
     }
     .write_config(get_config_dir())?;

@@ -104,8 +104,14 @@ enum AppCommand {
 
     #[command()]
     Config {
-        #[arg(long)]
-        sixel: bool,
+        /// Configure the graphics protocol for displaying images.
+        /// Supported values (case insensitive):
+        /// - n, none, disabled;
+        /// - s, sixel;
+        /// - k, kitty.
+        /// Default is "disabled".
+        #[arg(short, long)]
+        graphics: String,
     },
 }
 
@@ -209,8 +215,8 @@ async fn main() -> Result<()> {
                 list_problems(&group, &probset, page, show_status).await?;
             }
         },
-        AppCommand::Config { sixel } => {
-            configure(sixel)?;
+        AppCommand::Config { graphics } => {
+            configure(&graphics)?;
         }
     }
 
