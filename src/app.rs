@@ -247,13 +247,24 @@ pub async fn test_solution(
         file.blue().underline(),
         problem.title.blue().underline()
     );
-    let mut input = problem.sample_input.unwrap_or_default();
+
+    let mut input = if let Some(s) = &problem.sample_input {
+        get_printable_html_text(s, &GraphicsProtocol::Disabled).await
+    } else {
+        String::new()
+    };
+    let output = if let Some(s) = &problem.sample_output {
+        get_printable_html_text(s, &GraphicsProtocol::Disabled).await
+    } else {
+        String::new()
+    };
+
     if input.as_str() == "(无)" || input.as_str() == "（无）" {
         input = "".to_string();
     }
+
     println!("{}", "Case Input:".yellow().bold());
     println!("{}", input);
-    let output = problem.sample_output.unwrap_or_default();
     let code_output = match lang {
         Language::Gcc | Language::Gpp => {
             // .exe used for Windows compatibility
