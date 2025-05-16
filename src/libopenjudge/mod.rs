@@ -46,7 +46,7 @@ pub enum SubmissionResult {
     Unknown,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum Language {
     Gcc,
     Gpp,

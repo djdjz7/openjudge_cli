@@ -39,12 +39,12 @@ enum AppCommand {
     #[command(visible_alias = "s")]
     /// Submit a solution to a problem.
     Submit {
-        /// URL of the problem, excluding '/submit'.
+        /// URL(s) of the problem, excluding '/submit'.
         /// Use "." to submit to the last operated problem.
-        #[arg()]
-        url: String,
+        #[arg(required = true)]
+        url: Vec<String>,
         /// Path to the source code file.
-        #[arg()]
+        #[arg(required = true)]
         file: String,
         /// Language of the source code file, overrides inferred language.
         /// Supported values (case insensitive):
@@ -186,7 +186,8 @@ async fn main() -> Result<()> {
             }
         },
         AppCommand::Submit { url, file, lang } => {
-            submit_solution(&url, &file, lang).await?;
+            let url_refs: Vec<&str> = url.iter().map(|s| s.as_str()).collect();
+            submit_solution(url_refs, &file, lang).await?;
         }
         AppCommand::Test {
             url,

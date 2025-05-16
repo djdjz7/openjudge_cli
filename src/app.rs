@@ -4,7 +4,7 @@ use keyring::Entry;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
-use std::{fs, io::Write, os::unix::process::ExitStatusExt, process};
+use std::{fs, io::Write, os::unix::process::ExitStatusExt, process, thread};
 use syntect::{
     easy::HighlightLines, highlighting::Style, parsing::SyntaxSet, util::as_24_bit_terminal_escaped,
 };
@@ -194,7 +194,7 @@ pub async fn view_problem(url: &str) -> Result<()> {
 }
 
 async fn submit_solution_internal(
-    url: &str,
+    urls: Vec<&str>,
     file: &str,
     lang: Language,
     email: &str,
@@ -203,29 +203,44 @@ async fn submit_solution_internal(
     let client = libopenjudge::create_client().await?;
     libopenjudge::login(&client, email, password).await?;
     let code = fs::read_to_string(file)?;
-    println!("Submitting solution of {}", url.blue().underline());
-    let submission_url = libopenjudge::submit_solution(&client, url, &code, lang).await?;
-    println!(
-        "Submission created at {}\nWaiting for judgement...",
-        submission_url.blue().underline()
-    );
-    let submission = libopenjudge::query_submission_result(&client, &submission_url).await?;
-    print!("{}", &submission);
+    for url in urls {
+        println!("Submitting solution of {}", url.blue().underline());
+        let submission_url = libopenjudge::submit_solution(&client, url, &code, lang).await?;
+        println!(
+            "Submission created at {}\nWaiting for judgement...",
+            submission_url.blue().underline()
+        );
+        let submission = libopenjudge::query_submission_result(&client, &submission_url).await?;
+        print!("{}", &submission);
+    }
     Ok(())
 }
 
-pub async fn submit_solution(url: &str, file: &str, lang: Option<String>) -> Result<()> {
+pub async fn submit_solution(urls: Vec<&str>, file: &str, lang: Option<String>) -> Result<()> {
     let lang = determine_language(file, lang)?;
     let config = AppConfig::read_config(get_config_dir())?;
     let (email, password) = ensure_account(&config)?;
-    let url = ensure_last_problem(url, &config)?;
-    submit_solution_internal(url, file, lang, email, &password).await?;
-    AppConfig {
-        last_problem: Some(url.to_string()),
-        ..config.unwrap_or_default()
+    if urls.len() == 1 {
+        let url = urls[0];
+        let url = ensure_last_problem(url, &config)?;
+        submit_solution_internal(vec![url], file, lang, email, &password).await?;
+        AppConfig {
+            last_problem: Some(url.to_string()),
+            ..config.unwrap_or_default()
+        }
+        .write_config(get_config_dir())?;
+        Ok(())
+    } else {
+        let urls = urls
+            .iter()
+            .map(|url| -> Result<_> {
+                let url = ensure_last_problem(url, &config)?;
+                Ok(url)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        submit_solution_internal(urls, file, lang, email, &password).await?;
+        Ok(())
     }
-    .write_config(get_config_dir())?;
-    Ok(())
 }
 
 pub async fn test_solution(
@@ -316,7 +331,7 @@ pub async fn test_solution(
             println!("{}", "Accepted!".blue().bold());
             if submit {
                 let (email, password) = ensure_account(&config)?;
-                submit_solution_internal(url, file, lang, email, &password).await?;
+                submit_solution_internal(vec![url], file, lang, email, &password).await?;
             }
         } else {
             let diff = TextDiff::from_lines(output.trim(), code_output.trim());
