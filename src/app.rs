@@ -4,7 +4,7 @@ use keyring::Entry;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
-use std::{fs, io::Write, os::unix::process::ExitStatusExt, process, thread};
+use std::{fs, io::Write, os::unix::process::ExitStatusExt, process};
 use syntect::{
     easy::HighlightLines, highlighting::Style, parsing::SyntaxSet, util::as_24_bit_terminal_escaped,
 };

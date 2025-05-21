@@ -6,6 +6,8 @@ use image::{DynamicImage, ImageReader};
 use markup5ever::local_name;
 use scraper::ElementRef;
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "sixel")]
 use sixel_bytes;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -23,7 +25,7 @@ impl FromStr for GraphicsProtocol {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_lowercase().as_str() {
             "n" | "0" | "none" | "disabled" => Ok(GraphicsProtocol::Disabled),
-            "s" | "sixel" => Ok(GraphicsProtocol::Sixel),
+            "s" | "sixel" => use_sixel(),
             "k" | "kitty" => Ok(GraphicsProtocol::Kitty),
             _ => Err(anyhow::format_err!(
                 "Invalid value for GraphicsProtocol: {}",
@@ -31,6 +33,18 @@ impl FromStr for GraphicsProtocol {
             )),
         }
     }
+}
+
+#[cfg(feature = "sixel")]
+fn use_sixel() -> Result<GraphicsProtocol, anyhow::Error> {
+    return Ok(GraphicsProtocol::Sixel);
+}
+
+#[cfg(not(feature = "sixel"))]
+fn use_sixel() -> Result<GraphicsProtocol, anyhow::Error> {
+    return Err(anyhow::format_err!(
+        "Sixel feature is not enabled. Please build with the `sixel` feature."
+    ));
 }
 
 pub async fn get_printable_html_text(text: &str, graphics_protocol: &GraphicsProtocol) -> String {
@@ -127,6 +141,7 @@ async fn get_image(img: &ElementRef<'_>, graphics_protocol: &GraphicsProtocol) -
         .unwrap_or_else(|_| format!("[Image src {} cannot guess format]", src))
 }
 
+#[cfg(feature = "sixel")]
 fn encode_image_as_sixel(img: DynamicImage) -> Result<String, ()> {
     let rgb_image = img.into_rgb8();
     let bytes = rgb_image.as_raw();
@@ -138,6 +153,11 @@ fn encode_image_as_sixel(img: DynamicImage) -> Result<String, ()> {
         sixel_bytes::DiffusionMethod::Auto,
     )
     .map_err(|_| ())
+}
+
+#[cfg(not(feature = "sixel"))]
+fn encode_image_as_sixel(_img: DynamicImage) -> Result<String, ()> {
+    Ok("[No sixel support, please build with sixel feature enabled.]\n".to_string())
 }
 
 fn encode_image_as_kitty(img: DynamicImage) -> Result<String, ()> {
