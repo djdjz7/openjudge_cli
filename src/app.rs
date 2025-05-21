@@ -4,7 +4,9 @@ use keyring::Entry;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
-use std::{fs, io::Write, os::unix::process::ExitStatusExt, process};
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt;
+use std::{fs, io::Write, process};
 use syntect::{
     easy::HighlightLines, highlighting::Style, parsing::SyntaxSet, util::as_24_bit_terminal_escaped,
 };
@@ -386,10 +388,13 @@ pub async fn test_solution(
             "Exit Code: {}",
             code_output.status.code().unwrap_or_default()
         );
-        println!(
-            "Signal: {}",
-            code_output.status.signal().unwrap_or_default()
-        );
+        #[cfg(unix)]
+        {
+            println!(
+                "Signal: {}",
+                code_output.status.signal().unwrap_or_default()
+            );
+        }
         println!("STDOUT:\n{}", String::from_utf8(code_output.stdout)?);
         println!("STDERR:\n{}", String::from_utf8(code_output.stderr)?);
     }
