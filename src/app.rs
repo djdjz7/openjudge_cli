@@ -163,9 +163,9 @@ pub async fn view_problem(url: &str) -> Result<()> {
         .as_ref()
         .map(|x| {
             x.graphics_protocol
-                .unwrap_or(GraphicsProtocol::Disabled)
+                .unwrap_or(GraphicsProtocol::Auto)
         })
-        .unwrap_or(GraphicsProtocol::Disabled);
+        .unwrap_or(GraphicsProtocol::Auto);
     macro_rules! map_optional_printable {
         ($field: expr) => {
             if let Some(s) = $field {
