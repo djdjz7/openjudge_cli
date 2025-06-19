@@ -108,8 +108,10 @@ enum AppCommand {
         /// Supported values (case insensitive):
         /// - n, none, disabled;
         /// - s, sixel;
-        /// - k, kitty.
-        /// Default is "disabled".
+        /// - k, kitty;
+        /// - i, iterm;
+        /// - a, auto.
+        /// Default is "auto".
         #[arg(short, long)]
         graphics: String,
     },

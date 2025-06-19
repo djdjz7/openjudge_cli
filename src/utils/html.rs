@@ -1,8 +1,8 @@
-use std::str::FromStr;
+use std::{error::Error, fmt::Write, str::FromStr};
 
-use base64::{Engine, prelude::BASE64_STANDARD};
+use base64::{Engine, engine::Config, prelude::BASE64_STANDARD};
 use colored::Colorize;
-use image::{DynamicImage, ImageReader};
+use image::{DynamicImage, ImageEncoder, ImageReader, codecs::png::PngEncoder};
 use markup5ever::local_name;
 use scraper::ElementRef;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,10 @@ pub enum GraphicsProtocol {
     Sixel,
     #[serde(rename = "kitty")]
     Kitty,
+    #[serde(rename = "iterm")]
+    ITerm,
+    #[serde(rename = "auto")]
+    Auto,
 }
 
 impl FromStr for GraphicsProtocol {
@@ -27,6 +31,8 @@ impl FromStr for GraphicsProtocol {
             "n" | "0" | "none" | "disabled" => Ok(GraphicsProtocol::Disabled),
             "s" | "sixel" => use_sixel(),
             "k" | "kitty" => Ok(GraphicsProtocol::Kitty),
+            "i" | "iterm" => Ok(GraphicsProtocol::ITerm),
+            "a" | "auto" => Ok(GraphicsProtocol::Auto),
             _ => Err(anyhow::format_err!(
                 "Invalid value for GraphicsProtocol: {}",
                 value
@@ -135,6 +141,13 @@ async fn get_image(img: &ElementRef<'_>, graphics_protocol: &GraphicsProtocol) -
                             src
                         )
                     }),
+                    GraphicsProtocol::ITerm => encode_image_as_iterm(image).unwrap_or_else(|_| {
+                        format!(
+                            "[Image src {} cannot be encoded into iTerm inline image]",
+                            src
+                        )
+                    }),
+                    GraphicsProtocol::Auto => unreachable!(),
                 })
                 .unwrap_or_else(|_| format!("[Image src {} cannot be decoded]", src))
         })
@@ -161,10 +174,10 @@ fn encode_image_as_sixel(_img: DynamicImage) -> Result<String, ()> {
 }
 
 fn encode_image_as_kitty(img: DynamicImage) -> Result<String, ()> {
-    return Ok(get_img_display_data(img).join(""));
+    return Ok(get_image_kitty_data(img).join(""));
 }
 
-fn get_img_display_data(img: DynamicImage) -> Vec<String> {
+fn get_image_kitty_data(img: DynamicImage) -> Vec<String> {
     let rgb_image = img.to_rgb8();
     let rgb_data: Vec<u8> = rgb_image.pixels().flat_map(|pix| pix.0).collect();
     let pixels_encoded = BASE64_STANDARD.encode(rgb_data);
@@ -204,4 +217,27 @@ fn get_img_display_data(img: DynamicImage) -> Vec<String> {
         });
 
     result
+}
+
+fn encode_image_as_iterm(img: DynamicImage) -> Result<String, Box<dyn Error>> {
+    let mut bytes = vec![];
+    let (w, h) = (img.width(), img.height());
+    PngEncoder::new(&mut bytes).write_image(
+        &img.into_rgba8(),
+        w,
+        h,
+        image::ExtendedColorType::Rgba8,
+    )?;
+    let mut buf = String::with_capacity(
+        200 + base64::encoded_len(bytes.len(), BASE64_STANDARD.config().encode_padding())
+            .unwrap_or(0),
+    );
+    write!(
+        buf,
+        "\x1b]1337;File=inline=1;size={};width={w}px;height={h}px;doNotMoveCursor=1:",
+        bytes.len(),
+    )?;
+    BASE64_STANDARD.encode_string(bytes, &mut buf);
+    write!(buf, "\x07")?;
+    Ok(buf)
 }
