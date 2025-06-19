@@ -10,11 +10,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, arg, command};
 
 const NAME: &str = "OpenJudge CLI";
-const VERSION: &str = "0.0.1";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 const ABOUT: &str = "CLI for OpenJudge (openjudge.cn)";
 
 #[derive(Parser)]
-#[command(name = NAME, version = VERSION, author, about = ABOUT, long_about = ABOUT)]
+#[command(name = NAME, version = VERSION, about = ABOUT, long_about = ABOUT)]
 struct Cli {
     #[command(subcommand)]
     command: AppCommand,
@@ -111,6 +111,7 @@ enum AppCommand {
         /// - k, kitty;
         /// - i, iterm;
         /// - a, auto.
+        /// 
         /// Default is "auto".
         #[arg(short, long)]
         graphics: String,

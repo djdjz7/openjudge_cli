@@ -48,9 +48,9 @@ fn use_sixel() -> Result<GraphicsProtocol, anyhow::Error> {
 
 #[cfg(not(feature = "sixel"))]
 fn use_sixel() -> Result<GraphicsProtocol, anyhow::Error> {
-    return Err(anyhow::format_err!(
+    Err(anyhow::format_err!(
         "Sixel feature is not enabled. Please build with the `sixel` feature."
-    ));
+    ))
 }
 
 pub async fn get_printable_html_text(text: &str, graphics_protocol: GraphicsProtocol) -> String {
@@ -101,7 +101,7 @@ pub async fn html_to_terminal_output(
         local_name!("i") | local_name!("em") => output.concat().italic().to_string(),
         local_name!("mark") => output.concat().black().on_yellow().to_string(),
         local_name!("br") => "\n".to_string(),
-        local_name!("img") => get_image(&element, graphics_protocol).await,
+        local_name!("img") => get_image(element, graphics_protocol).await,
         _ => output.concat(),
     }
 }
@@ -175,7 +175,7 @@ fn encode_image_as_sixel(_img: DynamicImage) -> Result<String, ()> {
 }
 
 fn encode_image_as_kitty(img: DynamicImage) -> Result<String, ()> {
-    return Ok(get_image_kitty_data(img).join(""));
+    Ok(get_image_kitty_data(img).join(""))
 }
 
 fn get_image_kitty_data(img: DynamicImage) -> Vec<String> {

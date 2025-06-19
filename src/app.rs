@@ -163,7 +163,6 @@ pub async fn view_problem(url: &str) -> Result<()> {
         .as_ref()
         .map(|x| {
             x.graphics_protocol
-                .clone()
                 .unwrap_or(GraphicsProtocol::Disabled)
         })
         .unwrap_or(GraphicsProtocol::Disabled);
