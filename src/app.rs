@@ -170,14 +170,14 @@ pub async fn view_problem(url: &str) -> Result<()> {
     macro_rules! map_optional_printable {
         ($field: expr) => {
             if let Some(s) = $field {
-                Some(get_printable_html_text(s, &graphics_protocol).await)
+                Some(get_printable_html_text(s, graphics_protocol).await)
             } else {
                 None
             }
         };
     }
     let problem_print = Problem {
-        description: get_printable_html_text(&problem.description, &graphics_protocol).await,
+        description: get_printable_html_text(&problem.description, graphics_protocol).await,
         input: map_optional_printable!(&problem.input),
         output: map_optional_printable!(&problem.output),
         sample_input: map_optional_printable!(&problem.sample_input),
@@ -266,12 +266,12 @@ pub async fn test_solution(
     );
 
     let mut input = if let Some(s) = &problem.sample_input {
-        get_printable_html_text(s, &GraphicsProtocol::Disabled).await
+        get_printable_html_text(s, GraphicsProtocol::Disabled).await
     } else {
         String::new()
     };
     let output = if let Some(s) = &problem.sample_output {
-        get_printable_html_text(s, &GraphicsProtocol::Disabled).await
+        get_printable_html_text(s, GraphicsProtocol::Disabled).await
     } else {
         String::new()
     };

@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Write, str::FromStr};
+use std::{env, error::Error, fmt::Write, str::FromStr};
 
 use base64::{Engine, engine::Config, prelude::BASE64_STANDARD};
 use colored::Colorize;
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "sixel")]
 use sixel_bytes;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub enum GraphicsProtocol {
     #[serde(rename = "disabled")]
     Disabled,
@@ -53,17 +53,17 @@ fn use_sixel() -> Result<GraphicsProtocol, anyhow::Error> {
     ));
 }
 
-pub async fn get_printable_html_text(text: &str, graphics_protocol: &GraphicsProtocol) -> String {
+pub async fn get_printable_html_text(text: &str, graphics_protocol: GraphicsProtocol) -> String {
     html_to_terminal_output(
         &scraper::Html::parse_fragment(text).root_element(),
-        &graphics_protocol,
+        graphics_protocol,
     )
     .await
 }
 
 pub async fn html_to_terminal_output(
     element: &ElementRef<'_>,
-    graphics_protocol: &GraphicsProtocol,
+    graphics_protocol: GraphicsProtocol,
 ) -> String {
     if let local_name!("pre") = element.value().name.local {
         return element.text().collect();
@@ -106,7 +106,7 @@ pub async fn html_to_terminal_output(
     }
 }
 
-async fn get_image(img: &ElementRef<'_>, graphics_protocol: &GraphicsProtocol) -> String {
+async fn get_image(img: &ElementRef<'_>, graphics_protocol: GraphicsProtocol) -> String {
     let src = img.attr("src");
     if src.is_none() {
         return "".to_string();
@@ -125,6 +125,7 @@ async fn get_image(img: &ElementRef<'_>, graphics_protocol: &GraphicsProtocol) -
         return format!("[Image src {} read bytes failed]", src);
     }
     let bytes = bytes.unwrap();
+    let graphics_protocol = transform_protocol(graphics_protocol); 
     ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
         .map(|reader| {
@@ -240,4 +241,25 @@ fn encode_image_as_iterm(img: DynamicImage) -> Result<String, Box<dyn Error>> {
     BASE64_STANDARD.encode_string(bytes, &mut buf);
     write!(buf, "\x07")?;
     Ok(buf)
+}
+
+fn transform_protocol(original: GraphicsProtocol) -> GraphicsProtocol {
+    if !matches!(original, GraphicsProtocol::Auto) {
+        return original;
+    }
+    let term = env::var("TERM");
+    if let Ok(term) = term {
+        if term.contains("kitty") {
+            return GraphicsProtocol::Kitty;
+        }
+    }
+    let term_program = env::var("TERM_PROGRAM");
+    if term_program.is_err() {
+        return GraphicsProtocol::Disabled;
+    }
+    match term_program.unwrap().as_str() {
+        "ghostty" => GraphicsProtocol::Kitty,
+        "vscode" | "iTerm.app" => GraphicsProtocol::ITerm,
+        _ => GraphicsProtocol::Disabled
+    }
 }
