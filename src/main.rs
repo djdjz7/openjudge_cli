@@ -93,6 +93,11 @@ enum AppCommand {
         /// Search query.
         #[arg()]
         query: String,
+        /// Whether to use interactive mode.
+        /// 
+        /// In interactive mode, the program will prompt user to select a problem from the search results.
+        #[arg(short, long)]
+        interactive: bool,
     },
 
     #[command(visible_alias = "l")]
@@ -200,8 +205,8 @@ async fn main() -> Result<()> {
         } => {
             test_solution(&url, &file, lang, submit).await?;
         }
-        AppCommand::Search { group, query } => {
-            search(&group, &query).await?;
+        AppCommand::Search { group, query, interactive } => {
+            search(&group, &query, interactive).await?;
         }
         AppCommand::List { list_type } => match list_type {
             ListType::Submissions { problem_url } => {

@@ -4,6 +4,7 @@ use keyring::Entry;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
+
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::{fs, io::Write, process};
@@ -15,7 +16,10 @@ use crate::{
     code_theme,
     display::*,
     libopenjudge::{self, Language, Problem},
-    utils::html::{GraphicsProtocol, get_printable_html_text},
+    utils::{
+        html::{GraphicsProtocol, get_printable_html_text},
+        interactions,
+    },
 };
 
 #[derive(Serialize, Deserialize, Default)]
@@ -161,10 +165,7 @@ pub async fn view_problem(url: &str) -> Result<()> {
     let problem = libopenjudge::get_problem(&client, url).await?;
     let graphics_protocol = config
         .as_ref()
-        .map(|x| {
-            x.graphics_protocol
-                .unwrap_or(GraphicsProtocol::Auto)
-        })
+        .map(|x| x.graphics_protocol.unwrap_or(GraphicsProtocol::Auto))
         .unwrap_or(GraphicsProtocol::Auto);
     macro_rules! map_optional_printable {
         ($field: expr) => {
@@ -405,7 +406,7 @@ pub async fn test_solution(
     Ok(())
 }
 
-pub async fn search(group: &str, query: &str) -> Result<()> {
+pub async fn search(group: &str, query: &str, interactive: bool) -> Result<()> {
     println!(
         "Searching for {} in group {}...",
         query.bold(),
@@ -414,11 +415,27 @@ pub async fn search(group: &str, query: &str) -> Result<()> {
     let client = libopenjudge::create_client().await?;
     let result = libopenjudge::search(&client, group, query).await?;
     println!();
-    println!("Found {} results:", result.len().to_string().bold());
-    for item in &result {
-        println!("{}", item)
+    if !interactive {
+        println!("Found {} results:", result.len().to_string().bold());
+        for item in &result {
+            println!("{}", item);
+        }
+        return Ok(());
     }
-
+    let options = result
+        .iter()
+        .map(|item| item.to_string())
+        .collect::<Vec<_>>();
+    let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
+    let selected_index =
+        interactions::select_within(&format!("Found {} results:", result.len()), &option_refs, 4);
+    if let Some(index) = selected_index {
+        let selected_problem = &result[index];
+        println!("Fetching problem details:\n{}", selected_problem);
+        view_problem(&selected_problem.url).await?;
+    } else {
+        println!("No problem selected.");
+    }
     Ok(())
 }
 
