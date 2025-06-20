@@ -112,6 +112,7 @@ async fn get_image(img: &ElementRef<'_>, graphics_protocol: GraphicsProtocol) ->
         return "".to_string();
     }
     let src = src.unwrap().trim();
+    let graphics_protocol = transform_protocol(graphics_protocol); 
     if let GraphicsProtocol::Disabled = graphics_protocol {
         return format!("[Image src {}]\n", src);
     }
@@ -125,7 +126,6 @@ async fn get_image(img: &ElementRef<'_>, graphics_protocol: GraphicsProtocol) ->
         return format!("[Image src {} read bytes failed]", src);
     }
     let bytes = bytes.unwrap();
-    let graphics_protocol = transform_protocol(graphics_protocol); 
     ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
         .map(|reader| {
