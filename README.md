@@ -41,3 +41,16 @@ cache under `target/debug/build/sixel-sys-*`
 ## Usage
 
 Refer `oj --help`
+
+## Troubleshooting
+
+### DBus related errors
+
+On linux systems, you will need to install packages which provides
+`org.freedesktop.secrets` support in order for keyring services to
+work. [`gnome-keyring`](https://wiki.archlinux.org/title/GNOME/Keyring)
+was tested to work.
+
+### Couldn't access platform secure storage
+
+You need a default keyring store. Create one and set it as default.
