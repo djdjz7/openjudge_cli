@@ -242,6 +242,10 @@ pub async fn submit_solution(
         format!("{}/submit/", url)
     };
     let dom = get_and_parse_html(http_client, &url).await?;
+    let error = query_selector_inner_text(&dom, &ERROR_SELECTOR);
+    if !error.is_empty() {
+        return Err(anyhow!("Error on submission page: {}", error));
+    }
     let contest_id = dom
         .select(&contest_id_selector)
         .next()

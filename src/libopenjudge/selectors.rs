@@ -95,3 +95,5 @@ def_lazy_selector!(GROUP_PAGE_DESCRIPTION_SELECTOR, ".group-description");
 // Selectors for page bars on problem list page
 def_lazy_selector!(PAGEBAR_LAST_SELECTOR, ".page-bar .pages *:last-child");
 def_lazy_selector!(PAGEBAR_CURRENT_SELECTOR, ".page-bar .pages .current");
+
+def_lazy_selector!(ERROR_SELECTOR, "#error");
