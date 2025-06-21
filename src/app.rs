@@ -2,12 +2,13 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use keyring::Entry;
 use nanoid::nanoid;
+use onig::{self, Regex};
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
 
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
-use std::{fs, io::Write, process};
+use std::{fmt::Write as fmtWrite, fs, io::Write, process};
 use syntect::{
     easy::HighlightLines, highlighting::Style, parsing::SyntaxSet, util::as_24_bit_terminal_escaped,
 };
@@ -18,7 +19,7 @@ use crate::{
     libopenjudge::{self, Language, Problem},
     utils::{
         html::{GraphicsProtocol, get_printable_html_text},
-        interactions,
+        interactions::{self, select_within},
     },
 };
 
@@ -159,6 +160,7 @@ pub async fn process_credentials(email: String) -> Result<()> {
 }
 
 pub async fn view_problem(url: &str) -> Result<()> {
+    println!("Fetching problem details...");
     let config = AppConfig::read_config(get_config_dir())?;
     let url = ensure_last_problem(url, &config)?;
     let client = libopenjudge::create_client().await?;
@@ -422,24 +424,19 @@ pub async fn search(group: &str, query: &str, interactive: bool) -> Result<()> {
         }
         return Ok(());
     }
-    let options = result
-        .iter()
-        .map(|item| item.to_string())
-        .collect::<Vec<_>>();
-    let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
     let selected_index =
-        interactions::select_within(&format!("Found {} results:", result.len()), &option_refs, 4);
+        interactions::select_within(&format!("Found {} results:", result.len()), &result, 4, 1);
     if let Some(index) = selected_index {
         let selected_problem = &result[index];
-        println!("Fetching problem details:\n{}", selected_problem);
-        view_problem(&selected_problem.url).await?;
+        view_problem(&selected_problem.url).await
     } else {
         println!("No problem selected.");
+        Ok(())
     }
-    Ok(())
 }
 
 pub async fn view_user() -> Result<()> {
+    println!("Fetching user details...");
     let config = AppConfig::read_config(get_config_dir())?;
     let (email, password) = ensure_account(&config)?;
     let client = libopenjudge::create_client().await?;
@@ -450,6 +447,7 @@ pub async fn view_user() -> Result<()> {
 }
 
 pub async fn view_submission(url: &str) -> Result<()> {
+    println!("Fetching submission details...");
     let config = AppConfig::read_config(get_config_dir())?;
     let (email, password) = ensure_account(&config)?;
     let client = libopenjudge::create_client().await?;
@@ -476,7 +474,7 @@ pub async fn view_submission(url: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn list_submissions(problem_url: &str) -> Result<()> {
+pub async fn list_submissions(problem_url: &str, interactive: bool) -> Result<()> {
     let config = AppConfig::read_config(get_config_dir())?;
     let problem_url = ensure_last_problem(problem_url, &config)?;
     let (email, password) = ensure_account(&config)?;
@@ -486,7 +484,10 @@ pub async fn list_submissions(problem_url: &str) -> Result<()> {
 
     if submissions.is_empty() {
         println!("{}", "No submissions found.".bold());
-    } else {
+        return Ok(());
+    }
+
+    if !interactive {
         println!(
             "Found {} submissions:",
             submissions.len().to_string().bold()
@@ -494,15 +495,60 @@ pub async fn list_submissions(problem_url: &str) -> Result<()> {
         for submission in &submissions {
             println!("{}", submission);
         }
+        return Ok(());
     }
-    Ok(())
+    let selected_index = select_within(
+        &format!(
+            "Found {} submissions:",
+            submissions.len().to_string().bold(),
+        ),
+        &submissions,
+        2,
+        1,
+    );
+    match selected_index {
+        None => Ok(()),
+        Some(i) => {
+            let selected_submission = &submissions[i];
+            view_submission(&selected_submission.url).await
+        }
+    }
 }
 
-pub async fn list_probsets(group: &str) -> Result<()> {
+pub fn strip_slashes(text: &str) -> &str {
+    let pattern = Regex::new(r#"^\/?(.*?)\/?$"#).unwrap();
+    let captures = pattern.captures(text).unwrap();
+    captures.at(1).unwrap_or("")
+}
+
+pub async fn list_probsets(group: &str, interactive: bool) -> Result<()> {
+    println!("Fetching probsets...");
+    let group_id = group;
     let client = libopenjudge::create_client().await?;
     let group = libopenjudge::get_group_info(&client, group).await?;
-    println!("{}", group);
-    Ok(())
+    if !interactive || group.probsets.is_empty() {
+        println!("{}", group);
+        return Ok(());
+    }
+    let mut prompt = String::new();
+    writeln!(prompt, "{}", &group.name.bold())?;
+    writeln!(prompt, "{}", &group.url.blue().underline())?;
+    writeln!(prompt, "{}", &group.description)?;
+    let selected_index = select_within(&prompt, &group.probsets, 2, 3);
+    match selected_index {
+        None => Ok(()),
+        Some(i) => {
+            let selected_probset = &group.probsets[i];
+            list_problems(
+                group_id,
+                strip_slashes(&selected_probset.url),
+                None,
+                true,
+                interactive,
+            )
+            .await
+        }
+    }
 }
 
 pub async fn list_problems(
@@ -510,7 +556,9 @@ pub async fn list_problems(
     probset: &str,
     page: Option<u32>,
     show_status: bool,
+    interactive: bool,
 ) -> Result<()> {
+    println!("Fetching problems...");
     let client = libopenjudge::create_client().await?;
     if show_status {
         let config = AppConfig::read_config(get_config_dir())?;
@@ -518,8 +566,64 @@ pub async fn list_problems(
         libopenjudge::login(&client, email, &password).await?;
     }
     let problems = libopenjudge::get_partial_probset_info(&client, group, probset, page).await?;
-    println!("{}", problems);
-    Ok(())
+    if !interactive {
+        println!("{}", problems);
+        return Ok(());
+    }
+    let mut prompt = String::new();
+    writeln!(prompt, "{}/{}", problems.group_name, problems.name.bold())?;
+    writeln!(prompt, "{}\n", problems.url.blue().underline())?;
+    if problems.max_page != 1 {
+        writeln!(
+            prompt,
+            "Displaying page {} of {}\n",
+            problems.page.to_string().bold(),
+            problems.max_page.to_string().bold()
+        )?;
+    };
+    let mut options = problems
+        .problems
+        .iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>();
+    if problems.page > 1 {
+        options.push("Prev Page".to_owned());
+    }
+    if problems.page < problems.max_page {
+        options.push("Next Page".to_owned());
+    }
+    let selected_index = select_within(&prompt, &options, 2, 3);
+    match selected_index {
+        None => Ok(()),
+        Some(i) => match options[i].as_str() {
+            "Next Page" => {
+                Box::pin(list_problems(
+                    group,
+                    probset,
+                    Some(problems.page + 1),
+                    show_status,
+                    interactive,
+                ))
+                .await
+            }
+            "Prev Page" => {
+                Box::pin(list_problems(
+                    group,
+                    probset,
+                    Some(problems.page - 1),
+                    show_status,
+                    interactive,
+                ))
+                .await
+            }
+            _ => {
+                let rel = &problems.problems[i].url;
+                let root = url::Url::parse(&format!("http://{}.openjudge.cn", group))?;
+                let url = root.join(rel)?;
+                Box::pin(view_problem(url.as_str())).await
+            }
+        },
+    }
 }
 
 pub fn configure(graphics: &str) -> Result<()> {

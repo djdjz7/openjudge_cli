@@ -112,7 +112,7 @@ async fn get_image(img: &ElementRef<'_>, graphics_protocol: GraphicsProtocol) ->
         return "".to_string();
     }
     let src = src.unwrap().trim();
-    let graphics_protocol = transform_protocol(graphics_protocol); 
+    let graphics_protocol = transform_protocol(graphics_protocol);
     if let GraphicsProtocol::Disabled = graphics_protocol {
         return format!("[Image src {}]\n", src);
     }
@@ -260,6 +260,6 @@ fn transform_protocol(original: GraphicsProtocol) -> GraphicsProtocol {
     match term_program.unwrap().as_str() {
         "ghostty" => GraphicsProtocol::Kitty,
         "vscode" | "iTerm.app" => GraphicsProtocol::ITerm,
-        _ => GraphicsProtocol::Disabled
+        _ => GraphicsProtocol::Disabled,
     }
 }

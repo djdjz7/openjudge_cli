@@ -8,48 +8,61 @@ use crossterm::{
 };
 use std::{
     cmp::min,
-    io::{stdout, Write},
+    io::{Write, stdout},
 };
 
-pub fn select_within<'a>(
+pub fn select_within<T>(
     prompt: &str,
-    options: &'a [&'a str],
+    options: &[T],
     per_option_height: u16,
-) -> Option<usize> {
+    prompt_height: u16,
+) -> Option<usize>
+where
+    T: std::fmt::Display,
+{
     if options.is_empty() {
         return None;
     }
     let mut selected_index = 0;
     let mut options_offset_rows = 0;
-    // prompt, ellipsis top, ellipsis bottom.
-    let fixed_rows = 4;
+    // prompt, ellipsis top, ellipsis bottom, key prompt.
+    let fixed_rows = 3 + prompt_height;
     // prompt, ellipsis top.
-    let display_offset_rows = 2;
+    let display_offset_rows = 1 + prompt_height;
     let options_len = options.len();
     let mut stdout = stdout();
     terminal::enable_raw_mode().unwrap();
     execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide).unwrap();
     let result = loop {
         let (_, terminal_rows) = terminal::size().unwrap();
-        let scroll_height = terminal_rows as usize - fixed_rows;
-        queue!(
-            stdout,
-            terminal::Clear(ClearType::All),
-            MoveTo(0, 0),
-            Print(prompt.white().bold())
-        )
-        .unwrap();
+        let scroll_height = terminal_rows - fixed_rows;
+        queue!(stdout, terminal::Clear(ClearType::All)).unwrap();
+        for (i, line) in prompt.lines().take(prompt_height as usize).enumerate() {
+            queue!(
+                stdout,
+                MoveTo(0, i as u16),
+                Print(format!("{}", line.white().bold()))
+            )
+            .unwrap();
+        }
         for (i, option) in options
             .iter()
             .enumerate()
             .skip((options_offset_rows as f32 / per_option_height as f32).floor() as usize)
             .take((scroll_height as f32 / per_option_height as f32).ceil() as usize)
         {
-            for (j, line) in option.lines().enumerate().take(per_option_height as usize) {
+            for (j, line) in option
+                .to_string()
+                .lines()
+                .enumerate()
+                .take(per_option_height as usize)
+            {
                 if i * per_option_height as usize + j < options_offset_rows {
                     continue;
                 }
-                if i * per_option_height as usize + j >= options_offset_rows + scroll_height {
+                if i * per_option_height as usize + j
+                    >= options_offset_rows + scroll_height as usize
+                {
                     break;
                 }
                 queue!(
@@ -76,13 +89,14 @@ pub fn select_within<'a>(
         if options_offset_rows > 0 {
             queue!(
                 stdout,
-                MoveTo(0, 1),
+                MoveTo(0, display_offset_rows - 1),
                 terminal::Clear(ClearType::CurrentLine),
                 Print("  ...")
             )
             .unwrap();
         }
-        if options_offset_rows + scroll_height < options_len * per_option_height as usize {
+        if options_offset_rows + (scroll_height as usize) < options_len * per_option_height as usize
+        {
             queue!(
                 stdout,
                 MoveTo(0, terminal_rows - 2),
@@ -95,7 +109,7 @@ pub fn select_within<'a>(
             stdout,
             MoveTo(0, terminal_rows - 1),
             terminal::Clear(ClearType::CurrentLine),
-            Print("Navigate with arrow keys, Enter to select, 'q' or Ctrl+C to quit"),
+            Print("↑/k/↓/j/q/Esc/Enter"),
         )
         .unwrap();
         stdout.flush().unwrap();
@@ -107,7 +121,7 @@ pub fn select_within<'a>(
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => break None,
             KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                break None
+                break None;
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 selected_index = selected_index.saturating_sub(1);
@@ -118,10 +132,10 @@ pub fn select_within<'a>(
             KeyCode::Down | KeyCode::Char('j') => {
                 selected_index = min(selected_index + 1, options_len - 1);
                 if (selected_index + 1) * per_option_height as usize - options_offset_rows
-                    >= scroll_height
+                    >= scroll_height as usize
                 {
                     options_offset_rows =
-                        (selected_index + 1) * per_option_height as usize - scroll_height;
+                        (selected_index + 1) * per_option_height as usize - scroll_height as usize;
                 }
             }
             KeyCode::Enter => {
