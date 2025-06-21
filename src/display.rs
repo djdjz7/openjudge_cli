@@ -1,6 +1,6 @@
 use crate::libopenjudge::{
-    Group, Problem, ProblemListEntry, ProblemSearchResult, ProblemSetPartial, Submission,
-    SubmissionHistoryEntry, SubmissionResult, User,
+    Group, Problem, ProblemListEntry, ProblemSearchResult, ProblemSetEntry, ProblemSetPartial,
+    Submission, SubmissionHistoryEntry, SubmissionResult, User,
 };
 use colored::Colorize;
 use std::fmt::Display;
@@ -165,14 +165,16 @@ impl Display for Group {
                 self.probsets.len().to_string().bold()
             )?;
             for probset in &self.probsets {
-                writeln!(
-                    f,
-                    "{} {}",
-                    probset.name.bold(),
-                    probset.url.blue().underline()
-                )?;
+                writeln!(f, "{}", probset)?;
             }
         }
+        Ok(())
+    }
+}
+
+impl Display for ProblemSetEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} {}", self.name.bold(), self.url.blue().underline())?;
         Ok(())
     }
 }

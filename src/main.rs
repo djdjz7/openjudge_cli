@@ -2,6 +2,7 @@ mod app;
 mod code_theme;
 mod display;
 mod libopenjudge;
+mod tests;
 mod utils;
 
 use app::*;
@@ -93,6 +94,11 @@ enum AppCommand {
         /// Search query.
         #[arg()]
         query: String,
+        /// Whether to use interactive mode.
+        ///
+        /// In interactive mode, the program will prompt user to select a problem from the search results.
+        #[arg(short, long)]
+        interactive: bool,
     },
 
     #[command(visible_alias = "l")]
@@ -100,6 +106,12 @@ enum AppCommand {
     List {
         #[command(subcommand)]
         list_type: ListType,
+        /// Whether to use interactive mode.
+        ///
+        /// In interactive mode, the program will prompt user to select an entry.
+        /// Interactive mode will be inherited as deep as possible.
+        #[arg(short, long)]
+        interactive: bool,
     },
 
     #[command()]
@@ -111,7 +123,7 @@ enum AppCommand {
         /// - k, kitty;
         /// - i, iterm;
         /// - a, auto.
-        /// 
+        ///
         /// Default is "auto".
         #[arg(short, long)]
         graphics: String,
@@ -200,15 +212,22 @@ async fn main() -> Result<()> {
         } => {
             test_solution(&url, &file, lang, submit).await?;
         }
-        AppCommand::Search { group, query } => {
-            search(&group, &query).await?;
+        AppCommand::Search {
+            group,
+            query,
+            interactive,
+        } => {
+            search(&group, &query, interactive).await?;
         }
-        AppCommand::List { list_type } => match list_type {
+        AppCommand::List {
+            list_type,
+            interactive,
+        } => match list_type {
             ListType::Submissions { problem_url } => {
-                list_submissions(&problem_url).await?;
+                list_submissions(&problem_url, interactive).await?;
             }
             ListType::Probsets { group } => {
-                list_probsets(&group).await?;
+                list_probsets(&group, interactive).await?;
             }
             ListType::Problems {
                 group,
@@ -216,7 +235,7 @@ async fn main() -> Result<()> {
                 page,
                 show_status,
             } => {
-                list_problems(&group, &probset, page, show_status).await?;
+                list_problems(&group, &probset, page, show_status, interactive).await?;
             }
         },
         AppCommand::Config { graphics } => {

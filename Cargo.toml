@@ -24,6 +24,7 @@ markup5ever = "^0.14"
 sixel-bytes = { version = "0.2.3", optional = true}
 image = "0.25.6"
 onig = "6"
+crossterm = "0.29.0"
 
 [[bin]]
 name = "oj"
