@@ -116,7 +116,7 @@ fn get_config_dir() -> std::path::PathBuf {
 fn ensure_account(config: &Option<AppConfig>) -> Result<(&str, String)> {
     let email = config
         .as_ref()
-        .and_then(|config| config.user_email.as_deref())
+        .and_then(|config| config.user_email.as_ref())
         .ok_or_else(|| anyhow::anyhow!(NO_CREDENTIALS_FOUND))?;
     let entry = Entry::new("openjudge-cli", email)?;
     let password = entry.get_password().expect(NO_CREDENTIALS_FOUND);
@@ -572,7 +572,7 @@ pub async fn list_problems(
     }
     let mut prompt = String::new();
     writeln!(prompt, "{}/{}", problems.group_name, problems.name.bold())?;
-    writeln!(prompt, "{}\n", problems.url.blue().underline())?;
+    writeln!(prompt, "{}", problems.url.blue().underline())?;
     if problems.max_page != 1 {
         writeln!(
             prompt,

@@ -118,6 +118,9 @@ where
             continue;
         }
         let key = e.as_key_event().unwrap();
+        if key.kind != event::KeyEventKind::Press {
+            continue;
+        }
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => break None,
             KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
