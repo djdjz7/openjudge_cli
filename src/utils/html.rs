@@ -1,11 +1,16 @@
-use std::{env, error::Error, fmt::Write, str::FromStr};
+use std::{env, fmt::Write, str::FromStr, sync::LazyLock};
 
+use anyhow::Result;
 use base64::{Engine, engine::Config, prelude::BASE64_STANDARD};
 use colored::Colorize;
+use ego_tree::NodeRef;
 use image::{DynamicImage, ImageEncoder, ImageReader, codecs::png::PngEncoder};
 use markup5ever::local_name;
-use scraper::ElementRef;
+use onig::Regex;
+use scraper::{ElementRef, Node};
 use serde::{Deserialize, Serialize};
+
+static WHITESPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
 #[cfg(feature = "sixel")]
 use sixel_bytes;
@@ -54,55 +59,80 @@ fn use_sixel() -> Result<GraphicsProtocol, anyhow::Error> {
 }
 
 pub async fn get_printable_html_text(text: &str, graphics_protocol: GraphicsProtocol) -> String {
-    html_to_terminal_output(
-        &scraper::Html::parse_fragment(text).root_element(),
-        graphics_protocol,
-    )
-    .await
+    let html = scraper::Html::parse_fragment(text);
+    let mut output = vec![];
+    for child in html.root_element().children() {
+        output.push(
+            html_to_terminal_output_neo(
+                child,
+                graphics_protocol,
+                false, // do not preserve whitespace by default
+            )
+            .await,
+        );
+    }
+    output.concat()
 }
 
-pub async fn html_to_terminal_output(
-    element: &ElementRef<'_>,
+pub fn shrink_whitespace(text: &str) -> String {
+    WHITESPACE_RE.replace_all(text, " ")
+}
+
+pub async fn html_to_terminal_output_neo(
+    node: NodeRef<'_, Node>,
     graphics_protocol: GraphicsProtocol,
+    preserve_whitespace: bool,
 ) -> String {
-    if let local_name!("pre") = element.value().name.local {
-        return element.text().collect();
-    }
-    let mut output: Vec<String> = vec![];
-    for child in element.children() {
-        if child.value().is_comment() || child.value().is_doctype() {
-            continue;
+    match node.value() {
+        Node::Text(text) => {
+            if preserve_whitespace {
+                text.to_string()
+            } else {
+                shrink_whitespace(text)
+            }
         }
-        if child.value().is_text() {
-            output.push(
-                child
-                    .value()
-                    .as_text()
-                    .expect("Reported text node cannot be converted into Text.")
-                    .trim()
-                    .to_string(),
-            );
-        } else if child.value().is_element() {
-            let ele_ref = ElementRef::wrap(child)
-                .expect("Reported element node cannot be wrapped as ElementRef.");
-            // Use Box::pin to handle recursion in async function
-            output.push(Box::pin(html_to_terminal_output(&ele_ref, graphics_protocol)).await);
+        Node::Document | Node::Fragment => {
+            unreachable!("Caller error: call with root_element instead of Document or Fragment.")
         }
-    }
-    match element.value().name.local.to_ascii_lowercase() {
-        local_name!("b") | local_name!("strong") => output.concat().bold().white().to_string(),
-        local_name!("h1") => output.concat().bold().underline().white().to_string() + "\n",
-        local_name!("h2") => output.concat().bold().underline().to_string() + "\n",
-        local_name!("h3") | local_name!("h4") | local_name!("h5") | local_name!("h6") => {
-            output.concat().bold().to_string() + "\n"
+        Node::Doctype(_) | Node::Comment(_) | Node::ProcessingInstruction(_) => String::new(),
+        Node::Element(_) => {
+            let element_ref = ElementRef::wrap(node).unwrap();
+            if let local_name!("img") = element_ref.value().name.local {
+                return get_image(&element_ref, graphics_protocol).await;
+            } else if let local_name!("br") = element_ref.value().name.local {
+                return "\n".to_string();
+            } else {
+                let preserve_whitespace = preserve_whitespace
+                    || matches!(element_ref.value().name.local, local_name!("pre"));
+                let mut output = vec![];
+                for child in element_ref.children() {
+                    output.push(
+                        Box::pin(html_to_terminal_output_neo(
+                            child,
+                            graphics_protocol,
+                            preserve_whitespace,
+                        ))
+                        .await,
+                    );
+                }
+                match element_ref.value().name.local {
+                    local_name!("b") | local_name!("strong") => output.concat().bold().to_string(),
+                    local_name!("h1") => {
+                        output.concat().bold().underline().white().to_string() + "\n"
+                    }
+                    local_name!("h2") => output.concat().bold().underline().to_string() + "\n",
+                    local_name!("h3")
+                    | local_name!("h4")
+                    | local_name!("h5")
+                    | local_name!("h6") => output.concat().bold().to_string() + "\n",
+                    local_name!("div") => output.concat() + "\n",
+                    local_name!("p") => format!("\n{}\n", output.concat()),
+                    local_name!("i") | local_name!("em") => output.concat().italic().to_string(),
+                    local_name!("mark") => output.concat().black().on_yellow().to_string(),
+                    _ => output.concat(),
+                }
+            }
         }
-        local_name!("div") => output.concat() + "\n",
-        local_name!("p") => format!("\n{}\n", output.concat()),
-        local_name!("i") | local_name!("em") => output.concat().italic().to_string(),
-        local_name!("mark") => output.concat().black().on_yellow().to_string(),
-        local_name!("br") => "\n".to_string(),
-        local_name!("img") => get_image(element, graphics_protocol).await,
-        _ => output.concat(),
     }
 }
 
@@ -170,11 +200,11 @@ fn encode_image_as_sixel(img: DynamicImage) -> Result<String, ()> {
 }
 
 #[cfg(not(feature = "sixel"))]
-fn encode_image_as_sixel(_img: DynamicImage) -> Result<String, ()> {
+fn encode_image_as_sixel(_img: DynamicImage) -> Result<String> {
     Ok("[No sixel support, please build with sixel feature enabled.]\n".to_string())
 }
 
-fn encode_image_as_kitty(img: DynamicImage) -> Result<String, ()> {
+fn encode_image_as_kitty(img: DynamicImage) -> Result<String> {
     Ok(get_image_kitty_data(img).join(""))
 }
 
@@ -220,7 +250,7 @@ fn get_image_kitty_data(img: DynamicImage) -> Vec<String> {
     result
 }
 
-fn encode_image_as_iterm(img: DynamicImage) -> Result<String, Box<dyn Error>> {
+fn encode_image_as_iterm(img: DynamicImage) -> Result<String> {
     let mut bytes = vec![];
     let (w, h) = (img.width(), img.height());
     PngEncoder::new(&mut bytes).write_image(

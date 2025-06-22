@@ -1697,6 +1697,7 @@ dependencies = [
  "colored",
  "crossterm",
  "dirs",
+ "ego-tree",
  "image",
  "keyring",
  "markup5ever",
