@@ -44,6 +44,11 @@ Refer `oj --help`
 
 ## Troubleshooting
 
+### Build issues related to `onig`
+
+Try disabling onig default features in Cargo.toml by replacing `onig = "6"`
+with `onig = { version = "6", default-features = false }`
+
 ### DBus related errors
 
 On linux systems, you will need to install packages which provides
