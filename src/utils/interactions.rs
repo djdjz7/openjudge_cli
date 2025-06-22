@@ -69,7 +69,7 @@ where
                     stdout,
                     MoveTo(
                         0,
-                        display_offset_rows as u16
+                        display_offset_rows
                             + (i * per_option_height as usize + j - options_offset_rows) as u16
                     ),
                     terminal::Clear(ClearType::CurrentLine),
@@ -149,5 +149,5 @@ where
     };
     execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show).unwrap();
     terminal::disable_raw_mode().unwrap();
-    return result;
+    result
 }

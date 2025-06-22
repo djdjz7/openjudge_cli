@@ -140,13 +140,13 @@ pub async fn create_client() -> Result<Client> {
 fn query_selector_inner_text(dom: &scraper::Html, selector: &scraper::Selector) -> String {
     let selector_target = dom.select(selector).next();
     if let Some(selector_target) = selector_target {
-        let text = selector_target
+        
+        selector_target
             .text()
             .collect::<Vec<&str>>()
             .join("\n")
             .trim()
-            .to_string();
-        text
+            .to_string()
     } else {
         String::new()
     }
@@ -451,7 +451,7 @@ pub async fn get_user_info(http_client: &Client) -> Result<User> {
     let id = homepage_url
         .trim_end_matches('/')
         .split('/')
-        .last()
+        .next_back()
         .ok_or(anyhow!("Cannot strip user id from user homepage url."))?
         .to_string();
 
